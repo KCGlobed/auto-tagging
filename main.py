@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import markdown
 import os
 import io
+import re
 
 load_dotenv()
 
@@ -34,12 +35,15 @@ def text_to_html(text):
     if text is None:
         return None
 
+    # Normalize newlines and ensure double newlines so Markdown creates <p> tags
+    text_str = str(text).replace('\r\n', '\n')
+    text_str = re.sub(r'\n+', '\n\n', text_str).strip()
+
     return markdown.markdown(
-        str(text),
+        text_str,
         extensions=[
             "tables",
             "fenced_code",
-            "nl2br",
         ],
     )
 
