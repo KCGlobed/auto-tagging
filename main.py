@@ -1,11 +1,30 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from openpyxl import load_workbook
+from dotenv import load_dotenv
 import markdown
 import os
 import io
 
+load_dotenv()
+
 app = FastAPI(title="Excel Markdown to HTML Converter")
+
+# Get origins from environment variable, default to ["*"] if not set
+origins_str = os.getenv("ALLOWED_ORIGINS", "*")
+if origins_str == "*":
+    origins = ["*"]
+else:
+    origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def text_to_html(text):
