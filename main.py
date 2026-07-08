@@ -67,24 +67,25 @@ async def convert_excel(file: UploadFile = File(...)):
                     if isinstance(cell.value, str):
                         cell.value = text_to_html(cell.value)
 
+        # Save the modified workbook to a new in-memory byte stream
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
         # Output filename
         output_filename = f"converted_{file.filename}"
 
-        # Save in current working directory
-        output_path = os.path.join(os.getcwd(), output_filename)
+        headers = {
+            'Content-Disposition': f'attachment; filename="{output_filename}"',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
 
-        # wb.save(output_path)
-
-        # print("=" * 60)
-        # print("✅ Excel Converted Successfully")
-        # print(f"📁 Saved At : {output_path}")
-        # print("=" * 60)
-
-        # Return downloadable file
-        return FileResponse(
-            path=output_path,
-            filename=output_filename,
+        # Return downloadable file from memory
+        from fastapi.responses import Response
+        return Response(
+            content=output.getvalue(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers
         )
 
     except Exception as e:
