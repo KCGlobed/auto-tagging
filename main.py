@@ -60,12 +60,27 @@ async def convert_excel(file: UploadFile = File(...)):
         # Load workbook
         wb = load_workbook(io.BytesIO(contents))
 
-        # Convert every text cell
+        # Convert specific columns
+        target_columns = {"question", "solution"}
+
         for sheet in wb.worksheets:
-            for row in sheet.iter_rows():
-                for cell in row:
-                    if isinstance(cell.value, str):
-                        cell.value = text_to_html(cell.value)
+            col_indices = []
+
+            for i, row in enumerate(sheet.iter_rows()):
+                if i == 4:
+                    # Parse header row (Row 5 is index 4)
+                    for idx, cell in enumerate(row):
+                        if isinstance(cell.value, str) and cell.value.strip().lower() in target_columns:
+                            col_indices.append(idx)
+                    continue
+                
+                # Process data rows for only the target columns
+                # (Rows 1-4 will naturally be skipped because col_indices is empty until row 5)
+                for idx in col_indices:
+                    if idx < len(row):
+                        cell = row[idx]
+                        if isinstance(cell.value, str):
+                            cell.value = text_to_html(cell.value)
 
         # Save the modified workbook to a new in-memory byte stream
         output = io.BytesIO()
