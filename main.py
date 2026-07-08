@@ -35,17 +35,35 @@ def text_to_html(text):
     if text is None:
         return None
 
-    # Normalize newlines and ensure double newlines so Markdown creates <p> tags
-    text_str = str(text).replace('\r\n', '\n')
+    print(f"\n--- PROCESSING NEW CELL ---")
+    print(f"RAW EXCEL TEXT (repr): {repr(text)}")
+
+    text_str = str(text)
+    # Excel sometimes uses \r (carriage return) or \x0b (vertical tab) instead of \n for soft line breaks.
+    # We must normalize all these weird characters into standard \n first.
+    text_str = text_str.replace('\r\n', '\n')
+    text_str = text_str.replace('\r', '\n')
+    text_str = text_str.replace('\x0b', '\n')
+    text_str = text_str.replace('\u2028', '\n')
+
+    # Now that we only have \n, we replace 1 or more newlines with double newlines
+    # so that Markdown wraps each line block in its own <p> tag.
     text_str = re.sub(r'\n+', '\n\n', text_str).strip()
 
-    return markdown.markdown(
+    print(f"NORMALIZED TEXT (repr): {repr(text_str)}")
+
+    html_output = markdown.markdown(
         text_str,
         extensions=[
             "tables",
             "fenced_code",
         ],
     )
+
+    print(f"FINAL HTML OUTPUT: {repr(html_output)}")
+    print(f"---------------------------\n")
+
+    return html_output
 
 
 @app.post("/convert")
