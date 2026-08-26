@@ -1,4 +1,4 @@
-name: Deploy auto-tagging
+name: Deploy Application
 
 on:
   push:
@@ -6,10 +6,18 @@ on:
       - main
 
 jobs:
+
   deploy:
+
     runs-on: ubuntu-latest
+
     steps:
-      - name: Deploy application
+
+      ######################################################
+      # Trigger Deployment
+      ######################################################
+
+      - name: Trigger Deployment
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -17,5 +25,9 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             set -e
-            echo "Deploying auto-tagging..."
+
+            echo "=============================================="
+            echo "Deploying auto-tagging"
+            echo "=============================================="
+
             sudo /opt/deploy-platform/scripts/deploy.sh "auto-tagging"
