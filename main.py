@@ -24,6 +24,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://kcglobed-lms-admin.web.app",
+        'https://lms-admin.kcglobed.com'
     ],
     allow_credentials=True,
     allow_methods=["*"],
