@@ -4,3 +4,4 @@ python-multipart
 markdown
 openpyxl
 python-dotenv
+httpx
