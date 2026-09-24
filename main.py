@@ -31,7 +31,9 @@ app.add_middleware(
         "https://kcglobed-lms-admin.web.app",
         'https://lms-admin.kcglobed.com',
         'http://localhost:5173',
-        'https://lms-prod.kcglobed.com'
+        'https://lms-prod.kcglobed.com',
+        'https://pro.kcglobed.com',
+        'https://dev.kcglobed.com'
     ],
     allow_credentials=True,
     allow_methods=["*"],
