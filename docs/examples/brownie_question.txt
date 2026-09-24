@@ -1,0 +1,14 @@
+Brownie Co. operates as a bakery with two retail shops/cafes. Over the last two years, the company has seen a decline in profitability caused by heightened competition. The directors have obtained sector-wide financial ratios.
+
+Sector averages for the year ended 30 June 20X8:
+ROCE 28.60% | Operating profit margin 12.60% | Net asset turnover 4.01 times | Inventory holding period 8 days | Debt-to-equity 70%
+
+Statement of profit or loss for the year ended 31 December 20X8 (£000):
+Revenue 201,600 | Cost of sales (140,000) | Gross profit 61,600 | Operating expenses (35,280) | Profit from operations 26,320
+
+Statement of financial position as at 31 December 20X8 (£000):
+Non-current assets 110,000 | Inventory 7,920 | Equity shares of £1 each 34,000 | Revaluation surplus 10,800 | Retained earnings 20,960 | Total equity 65,760 | 10% bank loan 28,800
+
+Note 3: In January 20X9, management decided to apply further discounts to slow-moving seasonal inventory originally valued at a selling price of £3 million. Under normal circumstances this stock would yield a 30% gross profit margin. It was sold in February 20X9 for 50% of its production cost. The financial statements were authorised for issue on 15 March 20X9.
+
+Required: Using the details in Note 3, adjust the information provided and calculate the sector average equivalent ratios for Brownie Co. for the year ended 31 December 20X8. (7 marks)

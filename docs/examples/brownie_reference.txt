@@ -1,0 +1,26 @@
+Step 1: Adjustment for Note 3 - Slow-moving Seasonal Inventory
+Original selling price: £3,000,000. Normal gross profit margin: 30%.
+Original cost: £3,000,000 x (1 - 0.30) = £2,100,000
+Sold for 50% of production cost = £2,100,000 x 0.50 = £1,050,000
+Loss on disposal: £2,100,000 - £1,050,000 = £1,050,000
+The sale occurred in February 20X9, before the statements were authorised on 15 March 20X9, so this is an adjusting event after the reporting period (evidence of conditions at 31 December 20X8).
+Reduce inventory by £1,050,000 (write-down to net realisable value); increase cost of sales by £1,050,000.
+
+Step 2: Adjusted figures
+Revenue: £201,600,000 (unchanged)
+Cost of sales: £140,000,000 + £1,050,000 = £141,050,000
+Gross profit: £60,550,000
+Operating expenses: £35,280,000 (unchanged)
+Adjusted profit from operations: £25,270,000
+Adjusted inventory: £7,920,000 - £1,050,000 = £6,870,000
+Adjusted retained earnings: £20,960,000 - £1,050,000 = £19,910,000
+Adjusted total equity: £34,000,000 + £10,800,000 + £19,910,000 = £64,710,000
+Bank loan: £28,800,000
+Capital employed = Total equity + Non-current liabilities = £64,710,000 + £28,800,000 = £93,510,000
+
+Step 3: Ratios (adjusted)
+1. ROCE = 25,270 / 93,510 = 27.0% (sector 28.6%)
+2. Operating profit margin = 25,270 / 201,600 = 12.5% (sector 12.6%)
+3. Net asset turnover = 201,600 / 93,510 = 2.16 times (sector 4.01 times)
+4. Inventory holding period = 6,870 / 141,050 x 365 = 17.8 days (sector 8 days)
+5. Debt to equity = 28,800 / 64,710 = 44.5% (sector 70%)

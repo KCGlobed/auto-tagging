@@ -11,6 +11,8 @@ import re
 import httpx
 import json
 
+from acca_evaluator import build_messages, finalize_score, normalize_answer
+
 load_dotenv()
 
 app = FastAPI(title="Excel Markdown to HTML Converter")
@@ -138,7 +140,7 @@ async def convert_excel(file: UploadFile = File(...)):
         )
 
 
-from typing import Optional
+from typing import Optional, Union
 
 class EssayVerifyRequest(BaseModel):
     user_input: str
@@ -272,4 +274,91 @@ Scoring instructions:
         "status": "success",
         "score": parsed.get("score"),
         "reason": parsed.get("reason"),
+    }
+
+class ScenarioVerifyRequest(BaseModel):
+    # Excel answers may arrive as a JSON string or as the raw sheet array
+    user_input: Union[str, list, dict]
+    explanation: str
+    model: Optional[str] = "gpt-4o"
+    question: Optional[str] = None
+
+
+@app.post("/api/scenario-verify")
+async def verify_scenario_answer(request: ScenarioVerifyRequest):
+    """Marks an ACCA scenario-based answer (HTML, Excel sheet JSON or plain text) out of 10."""
+    if not request.user_input or not request.explanation:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required fields: user_input and explanation",
+        )
+
+    student_answer = normalize_answer(request.user_input)
+    reference_answer = normalize_answer(request.explanation)
+    question = normalize_answer(request.question) if request.question else None
+
+    if not reference_answer:
+        raise HTTPException(status_code=400, detail="explanation has no readable content")
+    if not student_answer:
+        return {"status": "success", "score": 0, "reason": "No answer was provided."}
+
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY environment variable is not set")
+
+    headers = {
+        "Authorization": f"Bearer {openai_api_key}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": request.model,
+        "messages": build_messages(student_answer, reference_answer, question),
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+        "seed": 42,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            raw = data["choices"][0]["message"]["content"]
+    except Exception as error:
+        print("❌ Scenario verification error:", error)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": str(error)}
+        )
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r'```(?:json)?(.*?)```', raw, re.DOTALL)
+        try:
+            parsed = json.loads(match.group(1).strip()) if match else None
+        except json.JSONDecodeError:
+            parsed = None
+        if parsed is None:
+            raise HTTPException(status_code=500, detail={"error": "AI returned invalid JSON", "raw_response": raw})
+
+    score = finalize_score(parsed)
+    if score is None:
+        raise HTTPException(status_code=500, detail={"error": "AI response has no score", "raw_response": raw})
+
+    return {
+        "status": "success",
+        "score": score,
+        "reason": parsed.get("reason"),
+        "breakdown": {
+            "requirement_verb": parsed.get("requirement_verb"),
+            "criteria": parsed.get("criteria"),
+            "marking_points": parsed.get("marking_points"),
+        },
     }
