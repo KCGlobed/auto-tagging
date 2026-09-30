@@ -11,7 +11,14 @@ import re
 import httpx
 import json
 
-from acca_evaluator import build_messages, finalize_score, normalize_answer
+from acca_evaluator import (
+    BLANK_ANSWER_REASON,
+    build_messages,
+    build_reason,
+    finalize_score,
+    normalize_answer,
+    strip_tutorial_notes,
+)
 
 load_dotenv()
 
@@ -296,13 +303,14 @@ async def verify_scenario_answer(request: ScenarioVerifyRequest):
         )
 
     student_answer = normalize_answer(request.user_input)
-    reference_answer = normalize_answer(request.explanation)
+    # Tutorial notes are guidance for students, not part of the marking scheme
+    reference_answer = strip_tutorial_notes(normalize_answer(request.explanation))
     question = normalize_answer(request.question) if request.question else None
 
     if not reference_answer:
         raise HTTPException(status_code=400, detail="explanation has no readable content")
     if not student_answer:
-        return {"status": "success", "score": 0, "reason": "No answer was provided."}
+        return {"status": "success", "score": 0, "reason": BLANK_ANSWER_REASON}
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
@@ -357,7 +365,7 @@ async def verify_scenario_answer(request: ScenarioVerifyRequest):
     return {
         "status": "success",
         "score": score,
-        "reason": parsed.get("reason"),
+        "reason": build_reason(parsed, score),
         "breakdown": {
             "requirement_verb": parsed.get("requirement_verb"),
             "criteria": parsed.get("criteria"),

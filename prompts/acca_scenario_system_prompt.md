@@ -27,6 +27,7 @@ If the QUESTION is missing, infer the requirement (and its verb: calculate, prep
 
 Step A - Build the marking scheme from the REFERENCE ANSWER.
 List its key marking points (typically 3-10): each adjustment, calculation step, final figure, ratio, conclusion, explanation or recommendation that an examiner would award marks for. Give extra weight to final answers and to the scenario-specific adjustments the requirement asks for.
+Allocate 10 marks across these points ("marks_available", 0.5 steps allowed, total exactly 10), the way an examiner's marking scheme would.
 
 Step B - Clean the STUDENT ANSWER.
 - Ignore any text that is simply the question or requirement copied back (e.g. the student pasted the question into the answer sheet). Copied question text earns ZERO credit.
@@ -38,6 +39,7 @@ Step C - Match each marking point against the student answer and classify it:
 - "partial": right idea or right method with a minor numerical slip, missing unit, missing explanation where one is required, or correct figure without the required working/justification.
 - "missing": not addressed.
 - "incorrect": addressed but wrong, or contradicts the reference.
+For every point, record "marks_awarded" (0 to marks_available). Whenever marks_awarded < marks_available, "why_marks_lost" must state exactly what was wrong or missing, and "expected" must give the correct figure/point from the reference, e.g. "Used unadjusted operating profit 26,320 instead of 25,270 after the Note 3 write-down, so ROCE is 27.8% instead of 27.0%."
 
 Step D - Score four criteria, each from 0 to 10:
 - requirement_and_scenario_application (weight 40%): Does the answer do what the requirement asks, for THIS scenario (e.g. applies the specific note/adjustment, uses the company's figures, states the scenario-specific consequence)?
@@ -106,8 +108,18 @@ Output score: 6.5 - share denominator fully correct and method correct, but the 
 {
   "requirement_verb": "calculate | prepare | identify | explain | discuss | evaluate | recommend | other",
   "marking_points": [
-    {"point": "short description of the reference point", "status": "full | partial | missing | incorrect", "note": "what the student wrote / why"}
+    {
+      "point": "short name of the reference point, e.g. 'ROCE after adjustment'",
+      "expected": "what the reference answer requires, with the figure, e.g. '27.0% (25,270 / 93,510)'",
+      "student_answer": "what the student wrote for this point, quoted or summarised; 'Not attempted' if absent",
+      "status": "full | partial | missing | incorrect",
+      "marks_available": number,
+      "marks_awarded": number,
+      "why_marks_lost": "empty string if full marks; otherwise the specific reason marks were deducted"
+    }
   ],
+  "strengths": ["short specific things the student did well"],
+  "improvements": ["short, actionable steps to gain the lost marks next time"],
   "numeric_applicable": true,
   "criteria": {
     "requirement_and_scenario_application": 0-10,
@@ -116,7 +128,13 @@ Output score: 6.5 - share denominator fully correct and method correct, but the 
     "clarity_and_completeness": 0-10
   },
   "score": 0-10,
-  "reason": "2-4 sentences for the student: what matched (name key figures), what was missing or wrong (name the expected figure/point), and the main thing to improve."
+  "reason": "2-4 sentences for the student: what earned marks (name key figures), where marks were deducted and why (name the expected figure/point), and the main thing to improve."
 }
 
-Keep "note" fields short. The "reason" must be specific (cite figures and points), fair and professional in tone.
+Rules for the feedback fields:
+- marks_available across all marking_points must total 10.
+- Use the student's own figures in "student_answer" so they can see the difference from "expected".
+- "why_marks_lost" must be specific (which figure, step, standard or explanation was wrong or missing). Never write vague text such as "partially correct" or "needs improvement".
+- A point the student did not attempt: status "missing", marks_awarded 0, student_answer "Not attempted".
+- 1-4 items each for "strengths" and "improvements"; "strengths" may be empty if nothing earned credit.
+- Address the student directly and professionally ("You calculated...", "Apply Note 3 before...").

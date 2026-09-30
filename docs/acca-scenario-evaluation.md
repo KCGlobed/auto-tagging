@@ -40,28 +40,48 @@ It sits next to `/api/essay-verify` and accepts the same request body. The diffe
 ```json
 {
   "status": "success",
-  "score": 8.7,
-  "reason": "All five ratios match the reference (ROCE 27.0%, margin 12.5%, ...). The adjusting-event justification under IAS 10 is not stated.",
+  "score": 4.6,
+  "reason": "Your ratio formulas are correct, but you did not apply Note 3, ...\n\nMarks deducted (5.4 of 10):\n- Note 3 inventory write-down (-1.9, missing): You did not apply Note 3, so the 1,050 write-down to NRV was never recognised. Expected: Write down inventory by 1,050 ...\n- ROCE (-1, partial): Correct formula, but you used unadjusted profit 26,320 ... Expected: 27.0% (25,270 / 93,510). You wrote: 27.8% (26,320 / 94,560).\n...\n\nMissing parts: Note 3 inventory write-down.\n\nWhat you did well:\n- All five ratio formulas are correct\n\nHow to improve:\n- Apply the Note 3 adjustment before calculating ratios",
   "breakdown": {
     "requirement_verb": "calculate",
     "criteria": {
-      "requirement_and_scenario_application": 9,
-      "technical_accuracy": 8,
-      "numerical_accuracy": 10,
-      "clarity_and_completeness": 8
+      "requirement_and_scenario_application": 4,
+      "technical_accuracy": 6,
+      "numerical_accuracy": 3,
+      "clarity_and_completeness": 7
     },
-    "marking_points": [
-      {"point": "Inventory write-down 1,050", "status": "full", "note": "..."}
-    ]
+    "marking_points": ["... raw per-point output from the AI ..."]
   }
 }
 ```
 
-`score` and `reason` have the same meaning as in `/api/essay-verify`. `breakdown` is extra detail for debugging or for showing feedback to students.
+`score` has the same meaning as in `/api/essay-verify`. `reason` is the same key, but it now holds the full feedback as plain text with `\n` line breaks, so it can be shown as-is (e.g. with CSS `white-space: pre-line`):
+
+```
+<summary: 2-4 sentences>
+
+Marks deducted (5.4 of 10):
+- <point> (-<marks lost>, <partial|missing|incorrect>): <why marks were lost>. Expected: <reference figure/point>. You wrote: <student's figure>.
+- ...
+
+Missing parts: <points not attempted>.
+
+What you did well:
+- ...
+
+How to improve:
+- ...
+```
+
+Sections with nothing to say are left out. For example, a 10/10 answer has no "Marks deducted" section.
+
+**How marks lost are calculated.** The AI shares out the 10 marks across the reference's marking points and awards marks per point. The final `score` is blended with the rubric (section 3.6), so the per-point losses are **scaled to add up exactly to `10 - score`**. If every point is correct but the score is still below 10 (for example, thin explanation), one deduction called "Overall quality of the answer" carries the difference.
+
+`breakdown` is the raw AI output (criteria scores and per-point marks), kept for debugging.
 
 Special cases:
 
-- Blank student answer (for example `<p> </p>` or an empty sheet): returns score `0` without calling OpenAI.
+- Blank student answer (for example `<p> </p>` or an empty sheet): returns score `0` with a reason showing all 10 marks deducted, without calling OpenAI.
 - Missing `user_input` or `explanation`: returns HTTP 400.
 
 ---
@@ -75,6 +95,10 @@ user_input / explanation / question
 normalize_answer()          HTML → text (tables as "cell | cell | cell")
                             Excel JSON → "Row N: [A] ... | [B] ..."
                             un-escapes \"  £  &nbsp;  &amp;
+        │
+        ▼
+strip_tutorial_notes()      reference answer only: drop everything from the first
+                            line starting with "Tutorial Note(s)" (case-insensitive)
         │
         ▼
 build_messages()            system prompt (marking logic + calibration)
@@ -109,6 +133,14 @@ Row 12: [A] Prepare a schedule
 ```
 
 Each text is capped at 30,000 characters.
+
+### 2.2 Tutorial notes are excluded from marking
+
+Reference answers often end with a **Tutorial Note**: study guidance for students, not part of the marking scheme. `strip_tutorial_notes()` removes everything from the first line that *starts* with "Tutorial Note" / "Tutorial Notes" (any case, with or without `:`, `-` or bold markers). This happens after normalization, so it works for HTML and plain text.
+
+- A mention inside a sentence ("see tutorial note below") is not cut.
+- If nothing would remain (the note comes first), the full reference is kept so marking still works.
+- Only the reference answer (`explanation`) is trimmed. The student answer is not.
 
 ---
 
