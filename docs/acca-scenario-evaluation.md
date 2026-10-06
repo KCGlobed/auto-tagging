@@ -97,8 +97,12 @@ normalize_answer()          HTML → text (tables as "cell | cell | cell")
                             un-escapes \"  £  &nbsp;  &amp;
         │
         ▼
-strip_tutorial_notes()      reference answer only: drop everything from the first
-                            line starting with "Tutorial Note(s)" (case-insensitive)
+split_tutorial_notes()      reference answer → (marking part, tutorial note), split at the
+                            first line starting with "Tutorial Note(s)" (case-insensitive)
+        │
+        ▼
+remove_copied_text()        drop student sentences copied near-verbatim from the tutorial
+                            note or the question; if nothing is left → score 0, no AI call
         │
         ▼
 build_messages()            system prompt (marking logic + calibration)
@@ -140,7 +144,34 @@ Reference answers often end with a **Tutorial Note**: study guidance for student
 
 - A mention inside a sentence ("see tutorial note below") is not cut.
 - If nothing would remain (the note comes first), the full reference is kept so marking still works.
-- Only the reference answer (`explanation`) is trimmed. The student answer is not.
+- The tutorial note is not sent to the AI, but it is kept for the copy check below.
+
+### 2.3 Copied text earns no credit
+
+Removing the tutorial note from the marking scheme isn't enough on its own. Tutorial notes often explain the same points as the answer, so a student who pastes tutorial-note text (without the heading) would match the marking points and earn marks. The same applies to text copied from the question.
+
+`remove_copied_text()` therefore runs **before** the AI sees the student answer, once against the tutorial note and once against `question` (when sent):
+
+1. Both texts are split into sentences. Excel rows/cells and table cells are split apart first.
+2. Words are compared in lower case without punctuation. Misspelt words are mapped to the source word they resemble (`statments` → `statements`, similarity ≥ 0.85, words of 4+ letters).
+3. A student sentence is **copied** when it has at least `COPY_MIN_WORDS` (6) words and at least `COPY_THRESHOLD` (90%) of its words appear in the same order, in runs of `COPY_MIN_RUN` (3+) words, in one source sentence.
+4. Copied sentences are removed. The AI marks only what is left.
+5. The `reason` gets a line such as *"Not credited: 2 sentences were copied word-for-word from the tutorial note. Only your own answer earns marks."*
+6. If nothing is left, the response is `score: 0` with a reason saying the answer only contains copied text. The AI is not called.
+
+Tested behaviour:
+
+| Student wrote | Result |
+|---|---|
+| Tutorial-note paragraph pasted without the heading | Removed |
+| Pasted with typos or a few words dropped | Removed |
+| Own answer + one pasted sentence | Only the pasted sentence is removed |
+| Pasted sentence inside an Excel cell | Removed from that cell |
+| Requirement text pasted from the question | Removed |
+| Honest paraphrase ("help the auditor understand the company's financial position") | Kept |
+| Short points under 6 words ("Board minutes.") | Kept |
+
+The check is **not** applied to the marking part of the expected solution. A correct answer naturally repeats lines such as "ROCE = 25,270 / 93,510 = 27.0%" word for word. To change sensitivity, adjust the three `COPY_*` constants in [acca_evaluator.py](../acca_evaluator.py).
 
 ---
 

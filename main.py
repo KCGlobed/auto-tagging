@@ -13,11 +13,14 @@ import json
 
 from acca_evaluator import (
     BLANK_ANSWER_REASON,
+    COPIED_ONLY_REASON,
     build_messages,
     build_reason,
+    copied_text_notice,
     finalize_score,
     normalize_answer,
-    strip_tutorial_notes,
+    remove_copied_text,
+    split_tutorial_notes,
 )
 
 load_dotenv()
@@ -304,13 +307,27 @@ async def verify_scenario_answer(request: ScenarioVerifyRequest):
 
     student_answer = normalize_answer(request.user_input)
     # Tutorial notes are guidance for students, not part of the marking scheme
-    reference_answer = strip_tutorial_notes(normalize_answer(request.explanation))
+    reference_answer, tutorial_note = split_tutorial_notes(normalize_answer(request.explanation))
     question = normalize_answer(request.question) if request.question else None
 
     if not reference_answer:
         raise HTTPException(status_code=400, detail="explanation has no readable content")
     if not student_answer:
         return {"status": "success", "score": 0, "reason": BLANK_ANSWER_REASON}
+
+    # Text pasted from the tutorial note or the question earns no credit, so remove it before marking
+    notices, copied_from = [], []
+    for source_name, source in (("tutorial note", tutorial_note), ("question", question)):
+        student_answer, removed = remove_copied_text(student_answer, source)
+        if removed:
+            notices.append(copied_text_notice(source_name, removed))
+            copied_from.append(source_name)
+    if not student_answer:
+        return {
+            "status": "success",
+            "score": 0,
+            "reason": COPIED_ONLY_REASON.format(sources=" and ".join(copied_from)),
+        }
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
@@ -365,7 +382,7 @@ async def verify_scenario_answer(request: ScenarioVerifyRequest):
     return {
         "status": "success",
         "score": score,
-        "reason": build_reason(parsed, score),
+        "reason": build_reason(parsed, score, notices),
         "breakdown": {
             "requirement_verb": parsed.get("requirement_verb"),
             "criteria": parsed.get("criteria"),

@@ -47,6 +47,8 @@ Both services receive the same basic information.
 
 > **Tutorial notes are ignored.** In the Scenario Checker, anything in the model answer from the heading **"Tutorial Note"** onwards is removed before marking. Tutorial notes are study guidance for students, so they never add to or take away from a student's mark. Put everything you want marked **above** the Tutorial Note heading.
 
+> **Copied text earns no marks.** If a student pastes sentences from the tutorial note or from the question into their answer (with or without the heading), the Scenario Checker removes those sentences before marking. The student is told how many sentences were not credited. Answers written in the student's own words are not affected.
+
 > **Important:** the quality of the mark depends on the quality of the model answer. A complete model answer with all figures, workings and explanations produces much better marking than a short or partial one.
 
 ---
@@ -124,7 +126,7 @@ Platform sends: student answer + model answer (+ question, if available)
         ↓
 STEP 1: Clean up      → formatting, tables and spreadsheet cells become plain readable text; tutorial notes are removed from the model answer
         ↓
-STEP 2: Blank check   → if the answer is empty, return 0 straight away
+STEP 2: Blank & copy check → copied tutorial-note/question sentences are removed; if nothing is left, return 0 straight away
         ↓
 STEP 3: Build the marking scheme → the AI lists the key points in the model answer
         ↓
@@ -139,7 +141,7 @@ Score + reason + breakdown are returned to the platform
 
 **Step 1: Clean up.** Students answer in a rich text editor (bold text, tables) or a spreadsheet grid. The checker first turns this into clean, readable text, like copying a page into Notepad but keeping tables and rows in order. This way the AI reads the *content* and is not confused by formatting. Any **Tutorial Note** at the end of the model answer is also removed here, because it is guidance for students and not part of the marking scheme.
 
-**Step 2: Blank check.** If nothing was written, the student gets 0 immediately and the AI is not called.
+**Step 2: Blank and copy check.** Any sentence the student copied word-for-word from the tutorial note or the question is removed, because copied text should not earn marks. If nothing is left (the answer was blank or entirely copied), the student gets 0 immediately and the AI is not called.
 
 **Step 3: Build the marking scheme.** The AI reads the model answer and lists the points an examiner would award marks for. These are usually 3–10 points, such as *"inventory write-down of £1.05m"*, *"ROCE 27.0%"* or *"diluted EPS 28.9p"*.
 
@@ -203,7 +205,7 @@ ACCA questions start with a word that tells the student how much to write. The S
 
 ### ⛔ Strict: these DO lose marks
 
-- **Copying the question back.** Text pasted from the question earns **zero**.
+- **Copying the question or the tutorial note.** Pasted sentences are removed before marking and earn **zero**.
 - **Wrong figures** that change the final answer.
 - **Skipping an adjustment the question asked for.** For example, calculating ratios without applying Note 3 when the question says "Using Note 3…".
 - **Theory with no link to the company**, when the question asks for application.
@@ -297,7 +299,13 @@ Yes, with the Scenario Checker. It reads each cell and row, whatever the layout.
 No. If the key figures and points are there, a short answer can score highly. It loses marks only when the question asked for an explanation that isn't there.
 
 **What happens if the student copies the question into their answer?**
-The copied part is ignored and earns no marks.
+The copied sentences are removed before marking, so they earn no marks. The reason tells the student how many sentences were not credited.
+
+**What if the student pastes the tutorial note into their answer, without the "Tutorial Note" heading?**
+Those sentences are recognised as copied and removed before marking, even with small typos or a few words changed, so they earn no marks. If the whole answer was copied, the score is 0.
+
+**Could a student who writes honestly be caught by mistake?**
+Very unlikely. Only near word-for-word copying is removed: at least 90% of a sentence matching the source in the same order. Short points (under 6 words) are never removed, and answers that explain the same idea in the student's own words are kept.
 
 **Can the student get marks for a correct point that isn't in the model answer?**
 Yes, in the Scenario Checker, if the point is valid for the case study and relevant to the question.

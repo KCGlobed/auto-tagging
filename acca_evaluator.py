@@ -5,6 +5,7 @@ See docs/acca-scenario-evaluation.md for the full logic.
 import html
 import json
 import re
+from difflib import SequenceMatcher, get_close_matches
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
@@ -208,16 +209,104 @@ def normalize_answer(content) -> str:
 _TUTORIAL_NOTE_RE = re.compile(r"^[ \t*#>\-]*tutorial\s+notes?\b", re.IGNORECASE | re.MULTILINE)
 
 
-def strip_tutorial_notes(reference: str) -> str:
-    """Drops everything from the first "Tutorial Note" heading onwards.
+def split_tutorial_notes(reference: str):
+    """Splits the reference into (marking part, tutorial note) at the first "Tutorial Note" heading.
 
-    Falls back to the full text if nothing would be left to mark against.
+    If nothing would be left to mark against, the full text is kept as the marking part.
     """
     match = _TUTORIAL_NOTE_RE.search(reference)
     if not match:
-        return reference
-    trimmed = reference[:match.start()].strip()
-    return trimmed or reference
+        return reference, ""
+    marking = reference[:match.start()].strip()
+    if not marking:
+        return reference, ""
+    return marking, reference[match.start():].strip()
+
+
+def strip_tutorial_notes(reference: str) -> str:
+    """Drops everything from the first "Tutorial Note" heading onwards."""
+    return split_tutorial_notes(reference)[0]
+
+
+# ---------------------------------------------------------------------------
+# Copy detection: text pasted from the tutorial note or the question earns no credit
+# ---------------------------------------------------------------------------
+
+# A student sentence counts as copied when it has at least COPY_MIN_WORDS words and
+# COPY_THRESHOLD of its words appear, in order, in runs of COPY_MIN_RUN+ words of one
+# source sentence. Runs of 3+ words ignore coincidental shared terms, and the 90% bar
+# keeps honest paraphrases ("help understand the company's position") from matching.
+COPY_MIN_WORDS = 6
+COPY_MIN_RUN = 3
+COPY_THRESHOLD = 0.9
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?;])\s+")
+_ROW_PREFIX_RE = re.compile(r"^Row \d+:\s*")
+_CELL_PREFIX_RE = re.compile(r"^\[[A-Z]+\]\s*")
+
+
+def _segments(text: str):
+    """Yields sentence-sized pieces of text (Excel rows/cells and table cells split apart)."""
+    for line in text.split("\n"):
+        line = _ROW_PREFIX_RE.sub("", line.strip())
+        for cell in line.split(" | "):
+            cell = _CELL_PREFIX_RE.sub("", cell.strip())
+            for sentence in _SENTENCE_SPLIT_RE.split(cell):
+                if sentence.strip():
+                    yield sentence.strip()
+
+
+def _words(text: str):
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _match_typo(word: str, vocabulary: set) -> str:
+    """Maps a misspelt word ("statments") to the source word it was copied from ("statements")."""
+    if word in vocabulary or len(word) < 4 or word.isdigit():
+        return word
+    close = get_close_matches(word, vocabulary, n=1, cutoff=0.85)
+    return close[0] if close else word
+
+
+def _is_copied(student_words, source_words) -> bool:
+    if not set(student_words) & set(source_words):
+        return False
+    blocks = SequenceMatcher(None, student_words, source_words, autojunk=False).get_matching_blocks()
+    matched = sum(b.size for b in blocks if b.size >= COPY_MIN_RUN)
+    return matched / len(student_words) >= COPY_THRESHOLD
+
+
+def remove_copied_text(student: str, source: str):
+    """Removes student sentences copied near-verbatim from source.
+
+    Returns (cleaned student text, number of sentences removed).
+    """
+    if not student or not source:
+        return student, 0
+    source_sentences = [w for w in (_words(s) for s in _segments(source)) if len(w) >= COPY_MIN_RUN]
+    if not source_sentences:
+        return student, 0
+    vocabulary = {w for sentence in source_sentences for w in sentence}
+
+    removed = 0
+    for sentence in set(_segments(student)):
+        words = [_match_typo(w, vocabulary) for w in _words(sentence)]
+        if len(words) < COPY_MIN_WORDS:
+            continue
+        if any(_is_copied(words, src) for src in source_sentences):
+            student = student.replace(sentence, "")
+            removed += 1
+
+    # Tidy up separators and rows left empty by the removal
+    lines = []
+    for line in student.split("\n"):
+        line = re.sub(r"(\s*\|\s*)+$", "", re.sub(r"\[[A-Z]+\]\s*(?=\||$)", "", line)).strip()
+        if line and not re.fullmatch(r"(Row \d+:|Sheet: .*)", line):
+            lines.append(line)
+    cleaned = re.sub(r"[ \t]+", " ", "\n".join(lines)).strip()
+    if not _words(re.sub(r"Sheet: .*", "", cleaned)):
+        cleaned = ""
+    return cleaned, removed
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +438,10 @@ def _split_marking_points(parsed: dict, score: float):
             "status": "partial",
             "expected": "Clear, complete answer that fully meets the requirement",
             "student_answer": None,
-            "why_marks_lost": "The key points are present, but the explanation, analysis or presentation falls short of a full-mark answer",
+            "why_marks_lost": (
+                "The key points are present, but the explanation, analysis or presentation falls short of a full-mark answer"
+                if points else "See the summary above for what was missing or incorrect"
+            ),
             "marks_lost": total_lost,
         })
     else:
@@ -367,14 +459,17 @@ def _fmt(marks: float) -> str:
     return f"{marks:g}"
 
 
-def build_reason(parsed: dict, score: float) -> str:
+def build_reason(parsed: dict, score: float, notices=None) -> str:
     """Builds the student-facing reason: summary, then each deduction with why marks were lost.
 
-    Marks lost per point are scaled so they add up to exactly 10 - score.
+    Marks lost per point are scaled so they add up to exactly 10 - score. Notices (e.g. about
+    copied text that was not credited) are shown straight after the summary.
     """
     correct, deductions = _split_marking_points(parsed, score)
     summary = str(parsed.get("reason") or "").strip()
     lines = [summary] if summary else []
+    if notices:
+        lines += [""] + list(notices)
 
     if deductions:
         lines += ["", f"Marks deducted ({_fmt(round(10 - score, 1))} of 10):"]
@@ -407,6 +502,21 @@ def build_reason(parsed: dict, score: float) -> str:
         lines += [f"- {item}" for item in improvements]
 
     return "\n".join(lines).strip()
+
+
+def copied_text_notice(source_name: str, count: int) -> str:
+    plural = "sentence was" if count == 1 else "sentences were"
+    return (f"Not credited: {count} {plural} copied word-for-word from the {source_name}. "
+            "Only your own answer earns marks.")
+
+
+COPIED_ONLY_REASON = (
+    "Your answer only contains text copied from the {sources}, so it earns no marks.\n\n"
+    "Marks deducted (10 of 10):\n"
+    "- Whole answer (-10, missing): no original answer was given; copied text is not credited.\n\n"
+    "How to improve:\n"
+    "- Answer the requirement in your own words, applying it to the scenario and showing your workings."
+)
 
 
 BLANK_ANSWER_REASON = (
