@@ -43,7 +43,9 @@ app.add_middleware(
         'http://localhost:5173',
         'https://lms-prod.kcglobed.com',
         'https://pro.kcglobed.com',
-        'https://dev.kcglobed.com'
+        'https://dev.kcglobed.com',
+        'http://stash.kcglobed.com',
+        'https://stash.kcglobed.com'
     ],
     allow_credentials=True,
     allow_methods=["*"],
