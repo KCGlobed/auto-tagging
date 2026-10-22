@@ -8,6 +8,7 @@ import markdown
 import os
 import io
 import re
+import asyncio
 import httpx
 import json
 
@@ -290,6 +291,79 @@ Scoring instructions:
         "reason": parsed.get("reason"),
     }
 
+OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+# OpenAI rate limits (429) and server errors (5xx) are usually temporary, so retry them
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+OPENAI_ATTEMPTS = 3
+MAX_RETRY_WAIT_SECONDS = 20
+
+
+def _openai_error_body(response) -> dict:
+    try:
+        return response.json().get("error") or {}
+    except Exception:
+        return {}
+
+
+def _retry_wait_seconds(response, attempt: int) -> float:
+    for header, scale in (("retry-after-ms", 0.001), ("retry-after", 1)):
+        try:
+            return min(float(response.headers[header]) * scale, MAX_RETRY_WAIT_SECONDS)
+        except (KeyError, ValueError):
+            pass
+    return min(2 * 2 ** attempt, MAX_RETRY_WAIT_SECONDS)
+
+
+async def post_openai_with_retry(headers: dict, payload: dict):
+    """Calls the OpenAI chat API, retrying rate limits and server errors with backoff."""
+    async with httpx.AsyncClient() as client:
+        for attempt in range(OPENAI_ATTEMPTS):
+            response = await client.post(OPENAI_CHAT_URL, headers=headers, json=payload, timeout=120.0)
+            if response.status_code not in RETRYABLE_STATUS or attempt == OPENAI_ATTEMPTS - 1:
+                return response
+            # Out of credits: retrying cannot help
+            if _openai_error_body(response).get("code") == "insufficient_quota":
+                return response
+            wait = _retry_wait_seconds(response, attempt)
+            print(f"⚠️ OpenAI {response.status_code}, retrying in {wait:.1f}s (attempt {attempt + 1})")
+            await asyncio.sleep(wait)
+    return response
+
+
+def openai_error(response) -> HTTPException:
+    """Turns an OpenAI error response into an HTTPException that keeps OpenAI's own message."""
+    error = _openai_error_body(response)
+    code = error.get("code") or error.get("type")
+    message = error.get("message") or response.text[:500]
+    print(f"❌ OpenAI error {response.status_code} ({code}): {message}")
+
+    if code == "insufficient_quota":
+        return HTTPException(status_code=503, detail={
+            "error": "OpenAI quota exhausted",
+            "message": "The OpenAI account has run out of credits or hit its billing limit. "
+                       "Add credits or raise the limit at https://platform.openai.com/settings/organization/billing",
+            "openai_code": code,
+            "openai_message": message,
+        })
+    if response.status_code == 429:
+        return HTTPException(
+            status_code=429,
+            detail={
+                "error": "OpenAI rate limit reached",
+                "message": "Too many marking requests at once. Please try again in a minute.",
+                "openai_code": code,
+                "openai_message": message,
+            },
+            headers={"Retry-After": "60"},
+        )
+    return HTTPException(status_code=502, detail={
+        "error": "OpenAI request failed",
+        "message": message,
+        "openai_status": response.status_code,
+        "openai_code": code,
+    })
+
+
 class ScenarioVerifyRequest(BaseModel):
     # Excel answers may arrive as a JSON string or as the raw sheet array
     user_input: Union[str, list, dict]
@@ -349,16 +423,19 @@ async def verify_scenario_answer(request: ScenarioVerifyRequest):
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=120.0
-            )
-            response.raise_for_status()
-            data = response.json()
-            raw = data["choices"][0]["message"]["content"]
+        response = await post_openai_with_retry(headers, payload)
+    except Exception as error:
+        print("❌ Scenario verification error:", error)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": str(error)}
+        )
+
+    if response.status_code != 200:
+        raise openai_error(response)
+
+    try:
+        raw = response.json()["choices"][0]["message"]["content"]
     except Exception as error:
         print("❌ Scenario verification error:", error)
         raise HTTPException(

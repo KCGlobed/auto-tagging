@@ -84,6 +84,16 @@ Special cases:
 - Blank student answer (for example `<p> </p>` or an empty sheet): returns score `0` with a reason showing all 10 marks deducted, without calling OpenAI.
 - Missing `user_input` or `explanation`: returns HTTP 400.
 
+OpenAI errors (rate limits and 5xx responses are retried up to 3 times, waiting 2s then 4s or as long as OpenAI's `retry-after` header says, at most 20s):
+
+| OpenAI result | API returns | `detail.error` |
+|---|---|---|
+| `429 rate_limit_exceeded` after all retries | HTTP 429 with `Retry-After: 60` | `OpenAI rate limit reached` |
+| `429 insufficient_quota` (no retry) | HTTP 503 | `OpenAI quota exhausted` |
+| Any other error, e.g. `401 invalid_api_key` | HTTP 502 | `OpenAI request failed` |
+
+Each `detail` includes `openai_code` and `openai_message` (OpenAI's own text), so the cause is visible without reading server logs.
+
 ---
 
 ## 2. Processing pipeline
