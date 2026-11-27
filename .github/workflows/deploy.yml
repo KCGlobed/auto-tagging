@@ -1,33 +1,136 @@
-name: Deploy Application
+name: Deploy to DigitalOcean
 
+# Deploys the auto-tagging API (FastAPI) to droplet 3 (168.144.211.139).
+# Runs alongside the old workflow (deploy.yml, push to main), which is left unchanged.
+# Runs on every push to the digitalocean-deploy branch, or by hand from the Actions tab.
+# Server setup this relies on: deploy-auto-tagging.md (kept outside the repo).
+#
+# Secrets used: SSH_HOST, SSH_USER (deploy), SSH_PASSWORD.
+# Settings (OPENAI_API_KEY) are NOT in git: they live on the server in $APP_DIR/shared/.env,
+# and each release gets a .env link to that file (main.py calls load_dotenv()).
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
 
+concurrency:
+  group: deploy-digitalocean-auto-tagging
+  cancel-in-progress: false
+
+env:
+  APP_DIR: /var/www/apps/auto-tagging   # releases/, shared/, venv/ and the "current" symlink live here
+  SERVICE: auto-tagging                 # systemd service (Uvicorn)
+  KEEP_RELEASES: 5                      # older releases are deleted after a deploy
+
 jobs:
-
   deploy:
-
     runs-on: ubuntu-latest
 
     steps:
+      ######################################################
+      # Checkout Repository (uses the built-in GITHUB_TOKEN)
+      ######################################################
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       ######################################################
-      # Trigger Deployment
+      # Package the code (no git data, caches, local environments or secrets)
       ######################################################
+      - name: Package Code
+        run: |
+          set -e
+          RELEASE="$(date +%Y%m%d_%H%M%S)"
+          ARCHIVE="release_${RELEASE}.tar.gz"
 
-      - name: Trigger Deployment
+          tar -czf "$RUNNER_TEMP/$ARCHIVE" \
+            --exclude=./.git \
+            --exclude=./.github \
+            --exclude=./docs \
+            --exclude=./scripts \
+            --exclude=./myenv \
+            --exclude=./venv \
+            --exclude=./.venv \
+            --exclude=./.env \
+            --exclude=./Dockerfile \
+            --exclude=./.dockerignore \
+            --exclude='converted_*.xlsx' \
+            --exclude='.DS_Store' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            .
+          mv "$RUNNER_TEMP/$ARCHIVE" .
+
+          echo "RELEASE=$RELEASE" >> "$GITHUB_ENV"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          ls -lh "$ARCHIVE"
+
+      ######################################################
+      # Upload Package to the Droplet
+      ######################################################
+      - name: Copy Package
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          source: ${{ env.ARCHIVE }}
+          target: ${{ env.APP_DIR }}/uploads
+
+      ######################################################
+      # Install, check, switch, restart
+      ######################################################
+      - name: Activate Release
         uses: appleboy/ssh-action@v1.2.2
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          envs: APP_DIR,SERVICE,RELEASE,ARCHIVE,KEEP_RELEASES
+          command_timeout: 15m
           script: |
             set -e
+            TARGET="$APP_DIR/releases/$RELEASE"
+            VENV="$APP_DIR/venv"
 
-            echo "=============================================="
-            echo "Deploying auto-tagging"
-            echo "=============================================="
+            test -f "$APP_DIR/shared/.env" || { echo "ERROR: $APP_DIR/shared/.env is missing on the server"; exit 1; }
 
-            sudo /opt/deploy-platform/scripts/deploy.sh "auto-tagging"
+            echo "Unpacking release $RELEASE"
+            mkdir -p "$TARGET"
+            tar -xzf "$APP_DIR/uploads/$ARCHIVE" -C "$TARGET"
+            rm -f "$APP_DIR/uploads/$ARCHIVE"
+
+            # Settings: main.py reads .env from the working folder
+            ln -sfn "$APP_DIR/shared/.env" "$TARGET/.env"
+
+            cd "$TARGET"
+
+            echo "Installing Python packages"
+            "$VENV/bin/pip" install --quiet --upgrade pip
+            "$VENV/bin/pip" install --quiet -r requirements.txt
+
+            echo "Checking that the app loads"
+            "$VENV/bin/python" -c "import main; print('OK:', main.app.title)"
+
+            # Everything above passed: switch traffic to the new release in one step
+            ln -sfn "$TARGET" "$APP_DIR/current.tmp"
+            mv -Tf "$APP_DIR/current.tmp" "$APP_DIR/current"
+
+            echo "Restarting the service"
+            sudo -n /usr/bin/systemctl restart "$SERVICE"
+
+            # Wait up to 1 minute for Uvicorn to answer
+            CODE=000
+            for i in $(seq 1 30); do
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" --unix-socket "/run/$SERVICE/uvicorn.sock" \
+                http://localhost/openapi.json || true)
+              [ "$CODE" = "200" ] && break
+              sleep 2
+            done
+            [ "$CODE" = "200" ] || { echo "ERROR: the API is not answering (last status $CODE)"; exit 1; }
+
+            # Keep only the newest releases
+            cd "$APP_DIR/releases"
+            ls -1t | tail -n +$((KEEP_RELEASES + 1)) | xargs -r rm -rf
+
+            echo "Live: $(readlink -f "$APP_DIR/current")"
